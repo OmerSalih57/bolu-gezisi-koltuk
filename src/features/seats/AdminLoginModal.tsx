@@ -1,3 +1,4 @@
+import { Eye, EyeOff } from 'lucide-react'
 import { useId, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -22,6 +23,7 @@ export function AdminLoginModal({
 }: AdminLoginModalProps) {
   const titleId = useId()
   const [password, setPassword] = useState('')
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -54,9 +56,11 @@ export function AdminLoginModal({
         <form className="mt-5" onSubmit={submit}>
           <label className="block text-sm font-medium text-slate-700" htmlFor="admin-password">
             Şifre
+          </label>
+          <div className="relative mt-1.5">
             <input
               id="admin-password"
-              type="password"
+              type={passwordVisible ? 'text' : 'password'}
               autoFocus
               autoComplete="current-password"
               required
@@ -65,9 +69,22 @@ export function AdminLoginModal({
                 setPassword(event.target.value)
                 setError(null)
               }}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-teal-700"
+              className="w-full rounded-xl border border-slate-200 py-2.5 pr-11 pl-3 font-normal outline-none focus:border-teal-700"
             />
-          </label>
+            <button
+              type="button"
+              aria-label={passwordVisible ? 'Şifreyi gizle' : 'Şifreyi göster'}
+              aria-pressed={passwordVisible}
+              onClick={() => setPasswordVisible((visible) => !visible)}
+              className="absolute inset-y-0 right-0 grid w-11 place-items-center text-slate-400 hover:text-slate-700"
+            >
+              {passwordVisible ? (
+                <EyeOff className="size-4" aria-hidden="true" />
+              ) : (
+                <Eye className="size-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
           {error ? <p className="mt-2 text-sm text-rose-700">{error}</p> : null}
           <div className="mt-5 flex items-center justify-end gap-3">
             {backHref ? (

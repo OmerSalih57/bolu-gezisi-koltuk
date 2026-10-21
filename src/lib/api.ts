@@ -96,10 +96,7 @@ export async function verifyAdmin(password: string): Promise<OkResult | FailResu
     return { ok: false, error: 'Şifre doğrulanamadı.' }
   }
   if (data === true) return { ok: true }
-  return {
-    ok: false,
-    error: 'Şifre hatalı. Veritabanındaki admin_secret değeri VITE_ADMIN_PASSWORD ile aynı olmalı.',
-  }
+  return { ok: false, error: 'Şifre hatalı.' }
 }
 
 export async function replaceParticipants(

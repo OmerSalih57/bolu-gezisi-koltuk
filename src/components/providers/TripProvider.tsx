@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { TripContext, type RosterUploadResult, type TripContextValue } from '@/hooks/useTrip.ts'
 import {
   clearStoredAdminPassword,
-  expectedAdminPassword,
   readStoredAdminPassword,
   storeAdminPassword,
 } from '@/lib/adminPassword.ts'
@@ -88,7 +87,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
     void (async () => {
       await reloadSeats()
       const saved = readStoredAdminPassword()
-      if (saved && saved === expectedAdminPassword()) {
+      if (saved) {
         const verified = await verifyAdmin(saved)
         if (!active) return
         if (verified.ok) {
@@ -97,8 +96,6 @@ export function TripProvider({ children }: { children: ReactNode }) {
         } else {
           clearAdmin()
         }
-      } else if (saved) {
-        clearAdmin()
       }
       if (active) setReady(true)
     })()
@@ -129,7 +126,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
       roster,
       async signIn(password: string) {
         if (!supabase) return supabaseConfigError
-        if (password !== expectedAdminPassword()) return 'Şifre hatalı.'
+        if (!password.trim()) return 'Şifre hatalı.'
         const verified = await verifyAdmin(password)
         if (!verified.ok) return verified.error
         unlock(password)

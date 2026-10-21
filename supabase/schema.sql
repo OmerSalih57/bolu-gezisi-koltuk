@@ -3,9 +3,12 @@
 --
 -- Kurulum:
 -- 1. Project Settings > API içindeki URL ve anon key değerlerini .env.local dosyasına koyun.
--- 2. Yönetim şifresi varsayılan olarak bolu2026'dır.
---    Değiştirmek için .env.local içindeki VITE_ADMIN_PASSWORD ile bu kaydı aynı yapın:
---    update public.admin_secret set password = 'yeni-sifre' where id = 1;
+-- 2. Yönetim şifresini frontend ortam değişkenine yazmayın. Vite, VITE_ ile başlayan
+--    değişkeni JavaScript paketine gömer. Şifre yalnızca bu tabloda durur.
+--    Şifreyi şöyle yazın (satır yoksa ekler, varsa değiştirir):
+--    insert into public.admin_secret (id, password)
+--    values (1, extensions.crypt('yeni-sifre', extensions.gen_salt('bf')))
+--    on conflict (id) do update set password = excluded.password;
 --
 -- Güvenlik:
 -- Anon anahtar tarayıcıda durur; bu normaldir. participants ve seats tablolarında
@@ -53,10 +56,6 @@ create table if not exists public.admin_secret (
   constraint admin_secret_singleton check (id = 1)
 );
 
-insert into public.admin_secret (id, password)
-values (1, 'bolu2026')
-on conflict (id) do nothing;
-
 alter table public.participants enable row level security;
 alter table public.seats enable row level security;
 alter table public.seat_status enable row level security;
@@ -68,6 +67,17 @@ revoke all on table public.seats from anon, authenticated;
 revoke all on table public.seat_status from anon, authenticated;
 revoke all on table public.admin_users from anon, authenticated;
 revoke all on table public.admin_secret from anon, authenticated;
+
+create table if not exists public.request_limits (
+  bucket text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists request_limits_bucket_idx
+  on public.request_limits (bucket, created_at desc);
+
+alter table public.request_limits enable row level security;
+revoke all on table public.request_limits from anon, authenticated;
 
 grant select on table public.seat_status to anon, authenticated;
 
@@ -85,20 +95,138 @@ drop function if exists public.close_roster();
 drop function if exists public.release_seat(integer, integer);
 drop function if exists public.is_admin();
 
-create or replace function public.is_admin(p_password text)
-returns boolean
-language sql
+do $$
+begin
+  create extension if not exists pgcrypto with schema extensions;
+exception
+  when duplicate_object then
+    null;
+end;
+$$;
+
+create or replace function public.request_ip()
+returns text
+language plpgsql
 stable
 security definer
 set search_path = public
 as $$
-  select coalesce(p_password, '') <> ''
-    and exists (
-      select 1
-      from public.admin_secret
-      where id = 1
-        and password = p_password
-    );
+declare
+  headers json;
+  forwarded text;
+begin
+  begin
+    headers := current_setting('request.headers', true)::json;
+  exception
+    when others then
+      return null;
+  end;
+
+  if headers is null then
+    return null;
+  end if;
+
+  forwarded := nullif(trim(split_part(coalesce(headers->>'x-forwarded-for', ''), ',', 1)), '');
+  if forwarded is null then
+    return null;
+  end if;
+
+  return left(forwarded, 64);
+end;
+$$;
+
+create or replace function public.register_attempt(
+  p_bucket text,
+  p_limit integer,
+  p_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  delete from public.request_limits
+  where created_at < now() - interval '1 hour';
+
+  select count(*)
+  into v_count
+  from public.request_limits
+  where bucket = p_bucket
+    and created_at > now() - make_interval(secs => p_seconds);
+
+  if v_count >= p_limit then
+    return false;
+  end if;
+
+  insert into public.request_limits (bucket) values (p_bucket);
+  return true;
+end;
+$$;
+
+create or replace function public.is_valid_name(raw text)
+returns boolean
+language sql
+immutable
+set search_path = public
+as $$
+  select coalesce(raw, '') <> ''
+    and length(raw) between 5 and 80
+    and raw ~ '\S\s+\S'
+    and raw !~ '[<>]'
+    and raw !~ '[[:cntrl:]]';
+$$;
+
+create or replace function public.is_admin(p_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_stored text;
+  v_bucket text := 'admin-fail:' || coalesce(public.request_ip(), 'unknown');
+  v_failures integer;
+begin
+  if coalesce(p_password, '') = '' or length(p_password) > 128 then
+    return false;
+  end if;
+
+  select count(*)
+  into v_failures
+  from public.request_limits
+  where bucket = v_bucket
+    and created_at > now() - interval '15 minutes';
+
+  if v_failures >= 8 then
+    return false;
+  end if;
+
+  select password
+  into v_stored
+  from public.admin_secret
+  where id = 1;
+
+  if v_stored is null then
+    return false;
+  end if;
+
+  if v_stored like '$2%' then
+    if v_stored = extensions.crypt(p_password, v_stored) then
+      return true;
+    end if;
+  elsif v_stored = p_password then
+    update public.admin_secret
+    set password = extensions.crypt(p_password, extensions.gen_salt('bf'))
+    where id = 1;
+    return true;
+  end if;
+
+  perform public.register_attempt(v_bucket, 8, 900);
+  return false;
+end;
 $$;
 
 create or replace function public.is_valid_tc(tc text)
@@ -209,9 +337,15 @@ declare
   v_tc text := regexp_replace(coalesce(p_tc_no, ''), '\D', '', 'g');
   v_phone text := public.normalize_phone(p_phone);
   v_registered boolean;
+  v_phone_on_file text;
   v_booked boolean;
+  v_ip text := public.request_ip();
 begin
-  if length(v_name) < 5 or v_name !~ '\S\s+\S' then
+  if v_ip is not null and not public.register_attempt('book-ip:' || v_ip, 8, 60) then
+    return jsonb_build_object('ok', false, 'error', 'Çok fazla deneme yapıldı. Biraz sonra yeniden deneyin.');
+  end if;
+
+  if not public.is_valid_name(v_name) then
     return jsonb_build_object('ok', false, 'error', 'Ad ve soyadı birlikte yazın.');
   end if;
 
@@ -223,18 +357,26 @@ begin
     return jsonb_build_object('ok', false, 'error', 'Telefon 05 ile başlayan 11 hane olmalı.');
   end if;
 
+  if not public.register_attempt('book-tc:' || v_tc, 5, 600) then
+    return jsonb_build_object('ok', false, 'error', 'Çok fazla deneme yapıldı. Biraz sonra yeniden deneyin.');
+  end if;
+
   if p_bus_number not in (1, 2, 3) or p_seat_number < 1 or p_seat_number > 55 then
     return jsonb_build_object('ok', false, 'error', 'Bu koltuk veritabanında yok.');
   end if;
 
-  select is_registered
-  into v_registered
+  select is_registered, phone
+  into v_registered, v_phone_on_file
   from public.participants
   where tc_no = v_tc
   for update;
 
   if not found or v_registered is not true then
     return jsonb_build_object('ok', false, 'error', 'Listede bulunamadınız.');
+  end if;
+
+  if public.normalize_phone(v_phone_on_file) is distinct from v_phone then
+    return jsonb_build_object('ok', false, 'error', 'Telefon numarası listedeki kayıtla eşleşmiyor.');
   end if;
 
   perform 1
@@ -318,8 +460,7 @@ begin
   ) as parsed
   where public.is_valid_tc(tc_no)
     and phone ~ '^05[0-9]{9}$'
-    and length(full_name) >= 5
-    and full_name ~ '\S\s+\S'
+    and public.is_valid_name(full_name)
   order by tc_no, ordinality desc;
 
   select count(*) into v_saved from pg_temp.incoming_roster;
@@ -443,6 +584,9 @@ end;
 $$;
 
 revoke all on function public.is_admin(text) from public, anon, authenticated;
+revoke all on function public.request_ip() from public, anon, authenticated;
+revoke all on function public.register_attempt(text, integer, integer) from public, anon, authenticated;
+revoke all on function public.is_valid_name(text) from public, anon, authenticated;
 revoke all on function public.is_valid_tc(text) from public, anon, authenticated;
 revoke all on function public.normalize_phone(text) from public, anon, authenticated;
 revoke all on function public.sync_seat_status() from public, anon, authenticated;

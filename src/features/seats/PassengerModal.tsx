@@ -45,6 +45,7 @@ export function PassengerModal({ busName, seatNumber, onClose, onSave }: Passeng
     const trimmedName = fullName.trim().replace(/\s+/g, ' ')
     const nameParts = trimmedName.split(' ')
     if (
+      trimmedName.length > 80 ||
       nameParts.length < 2 ||
       nameParts.some((part) => !/^[\p{L}][\p{L}'-]{1,}$/u.test(part))
     ) {
@@ -95,13 +96,14 @@ export function PassengerModal({ busName, seatNumber, onClose, onSave }: Passeng
           Koltuk {seatNumber}
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Ad soyad, T.C. kimlik numarası ve telefon ile kayıt olun. Koltuk, listedeki T.C. kimlik numarasıyla ayrılır.
+          Ad soyad, T.C. kimlik numarası ve kayıtlı telefon numaranız gerekir.
         </p>
         <form className="mt-5 space-y-4" onSubmit={submit}>
           <Field
             label="Ad Soyad"
             value={fullName}
             autoComplete="name"
+            maxLength={80}
             error={errors.fullName}
             onChange={setFullName}
           />
@@ -119,6 +121,7 @@ export function PassengerModal({ busName, seatNumber, onClose, onSave }: Passeng
             value={phone}
             inputMode="tel"
             autoComplete="tel"
+            maxLength={18}
             error={errors.phone}
             onChange={setPhone}
           />
