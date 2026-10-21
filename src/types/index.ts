@@ -23,7 +23,9 @@ export type Trip = {
   community: string
   origin: string
   destination: string
+  meetingPoint: string
   departureAt: string
+  returnAt: string
   buses: Bus[]
 }
 

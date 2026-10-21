@@ -10,7 +10,9 @@ const tripMeta = {
   community: APP_TITLE,
   origin: 'Ankara',
   destination: 'Bolu',
-  departureAt: '2026-11-14T07:30:00+03:00',
+  meetingPoint: 'Kızılay Gama İş Merkezi önü',
+  departureAt: '2026-10-24T06:30:00+03:00',
+  returnAt: '2026-10-24T22:00:00+03:00',
 }
 
 export function tripFromSeats(rows: PublicSeat[]): Trip {

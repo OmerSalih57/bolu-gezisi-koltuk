@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
+import { TripSchedule } from '@/components/trip/TripSchedule.tsx'
 import { useTrip } from '@/hooks/useTrip.ts'
 import { TRIP_ID } from '@/lib/trip.ts'
 
@@ -30,9 +31,7 @@ export function TripSectionLayout() {
     <section>
       <p className="text-sm text-teal-800">{trip.community}</p>
       <h1 className="mt-1 text-3xl font-semibold tracking-tight">{trip.title}</h1>
-      <p className="mt-2 text-slate-600">
-        {trip.origin} → {trip.destination}
-      </p>
+      <TripSchedule trip={trip} />
       <nav className="mt-6 flex gap-2">
         {sections.map((section) => (
           <NavLink

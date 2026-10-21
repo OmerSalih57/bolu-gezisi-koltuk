@@ -5,6 +5,7 @@ import { NamedSeatMap } from '@/features/seats/NamedSeatMap.tsx'
 import { SetupScreen } from '@/features/setup/SetupScreen.tsx'
 import { useTrip } from '@/hooks/useTrip.ts'
 import { APP_TITLE } from '@/lib/brand.ts'
+import { formatDateTime, formatTime } from '@/lib/format.ts'
 import { TRIP_ID } from '@/lib/trip.ts'
 
 export function PrintSchemasPage() {
@@ -63,6 +64,10 @@ export function PrintSchemasPage() {
               <h2 className="mt-[1mm] text-[16pt] font-bold">
                 {bus.name} · {bus.capacity} kişilik
               </h2>
+              <p className="mt-[1mm] text-[10pt]">
+                Kalkış {formatDateTime(trip.departureAt)} · {trip.meetingPoint} · İniş {formatTime(trip.returnAt)}, aynı
+                konum
+              </p>
             </header>
             <NamedSeatMap
               bus={bus}

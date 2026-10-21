@@ -1,10 +1,10 @@
 import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { RequireDatabase } from '@/components/setup/RequireDatabase.tsx'
+import { TripSchedule } from '@/components/trip/TripSchedule.tsx'
 import { PageHeading } from '@/components/ui/PageHeading.tsx'
 import { useTrip } from '@/hooks/useTrip.ts'
 import { APP_TITLE } from '@/lib/brand.ts'
-import { formatDateTime } from '@/lib/format.ts'
 
 export function TripsPage() {
   return (
@@ -35,10 +35,7 @@ function TripList() {
               <div>
                 <p className="text-sm text-teal-800">{trip.community}</p>
                 <h2 className="mt-1 text-xl font-semibold">{trip.title}</h2>
-                <p className="mt-2 text-slate-600">
-                  {trip.origin} → {trip.destination}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">{formatDateTime(trip.departureAt)}</p>
+                <TripSchedule trip={trip} />
               </div>
               <p className="text-sm text-slate-500">
                 {occupied}/{total} koltuk dolu
