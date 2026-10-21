@@ -1,7 +1,5 @@
 # Bolu Gezisi Koltuk Seçim Sistemi
 
-Koltuk durumu ve katılımcı doğrulaması Supabase üzerindedir. T.C. kimlik listesi tarayıcıya açık gelmez.
-
 ## Yerel çalıştırma
 
 ```bash
