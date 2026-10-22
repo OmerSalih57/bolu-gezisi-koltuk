@@ -1,4 +1,4 @@
-import { busLayout, type LayoutSlot } from '@/lib/busLayout.ts'
+import { busLayout, isGuideSeat, type LayoutSlot } from '@/lib/busLayout.ts'
 import type { Bus } from '@/types/index.ts'
 
 type NamedSeatMapProps = {
@@ -22,7 +22,15 @@ export function NamedSeatMap({ bus, namesBySeat }: NamedSeatMapProps) {
       </div>
       <div className="flex flex-col gap-[1mm]" aria-label={`${bus.name} isimli şema`}>
         {rows.map((row) =>
-          row.center ? (
+          row.full ? (
+            <div key={row.id} className="grid w-[159mm] grid-cols-5 gap-[1.5mm] pt-[1mm]">
+              {row.full.map((slot) =>
+                slot.kind === 'seat' ? (
+                  <NamedSeat key={slot.number} number={slot.number} name={names.get(slot.number)} wide />
+                ) : null,
+              )}
+            </div>
+          ) : row.center ? (
             <div key={row.id} className="flex justify-center">
               {row.center.map((slot) =>
                 slot.kind === 'seat' ? (
@@ -69,18 +77,26 @@ function Side({ slots, names }: { slots: LayoutSlot[]; names: Map<number, string
   )
 }
 
-function NamedSeat({ number, name }: { number: number; name?: string }) {
+function NamedSeat({ number, name, wide = false }: { number: number; name?: string; wide?: boolean }) {
+  const guide = isGuideSeat(number)
+  const label = guide ? 'Rehber' : name
   return (
     <div
       data-print-seat={number}
-      data-passenger={name ?? ''}
-      className={`flex h-[12.5mm] w-[36mm] flex-col justify-center overflow-hidden rounded-[1.5mm] border px-[1mm] leading-none ${
-        name ? 'border-slate-900 bg-amber-100' : 'border-slate-400 bg-white'
+      data-passenger={label ?? ''}
+      className={`flex h-[12.5mm] flex-col justify-center overflow-hidden rounded-[1.5mm] border px-[1mm] leading-none ${
+        wide ? 'w-full' : 'w-[36mm]'
+      } ${
+        guide
+          ? 'border-slate-500 bg-slate-200'
+          : label
+            ? 'border-slate-900 bg-amber-100'
+            : 'border-slate-400 bg-white'
       }`}
     >
       <span className="text-[8pt] font-bold">{number}</span>
-      {name ? (
-        <span className="mt-[0.4mm] line-clamp-2 text-[7.5pt] leading-tight font-semibold">{name}</span>
+      {label ? (
+        <span className="mt-[0.4mm] line-clamp-2 text-[7.5pt] leading-tight font-semibold">{label}</span>
       ) : null}
     </div>
   )

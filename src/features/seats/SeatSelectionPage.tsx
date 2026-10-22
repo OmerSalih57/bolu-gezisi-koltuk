@@ -7,6 +7,7 @@ import { FleetAdmin } from '@/features/seats/FleetAdmin.tsx'
 import { PassengerModal } from '@/features/seats/PassengerModal.tsx'
 import { SeatMap } from '@/features/seats/SeatMap.tsx'
 import { useTrip } from '@/hooks/useTrip.ts'
+import { isTakenSeat } from '@/lib/busLayout.ts'
 import { TRIP_ID } from '@/lib/trip.ts'
 import type { PassengerInput } from '@/types/index.ts'
 
@@ -24,6 +25,7 @@ function SeatSelection() {
   const [busId, setBusId] = useState('otobus-1')
   const [activeSeat, setActiveSeat] = useState<number | null>(null)
   const [occupiedNotice, setOccupiedNotice] = useState<number | null>(null)
+  const [guideNotice, setGuideNotice] = useState<number | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
 
@@ -33,7 +35,7 @@ function SeatSelection() {
     return <p className="text-slate-600">Gezi bulunamadı.</p>
   }
 
-  const occupied = bus.seats.filter((seat) => seat.status === 'occupied').length
+  const occupied = bus.seats.filter((seat) => isTakenSeat(seat.status)).length
 
   async function savePassenger(input: PassengerInput): Promise<string | null> {
     if (activeSeat === null) return 'Koltuk seçin.'
@@ -86,7 +88,7 @@ function SeatSelection() {
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
         {trip.buses.map((item) => {
-          const filled = item.seats.filter((seat) => seat.status === 'occupied').length
+          const filled = item.seats.filter((seat) => isTakenSeat(seat.status)).length
           const selected = item.id === bus.id
           return (
             <button
@@ -101,6 +103,11 @@ function SeatSelection() {
               }`}
             >
               <span className="block font-semibold">{item.name}</span>
+              {item.plate ? (
+                <span className={`mt-1 block font-mono text-sm font-semibold tracking-wide ${selected ? 'text-white' : 'text-slate-900'}`}>
+                  {item.plate}
+                </span>
+              ) : null}
               <span className={`mt-1 block text-sm ${selected ? 'text-teal-100' : 'text-slate-500'}`}>
                 {item.capacity} kişilik · {filled} dolu
               </span>
@@ -115,23 +122,33 @@ function SeatSelection() {
           activeSeat={activeSeat}
           onSelect={(number) => {
             const seat = bus.seats.find((item) => item.number === number)
+            if (seat?.status === 'reserved') {
+              setActiveSeat(null)
+              setOccupiedNotice(null)
+              setGuideNotice(number)
+              return
+            }
             if (seat?.status === 'occupied') {
               setActiveSeat(null)
+              setGuideNotice(null)
               setOccupiedNotice(number)
               return
             }
             setOccupiedNotice(null)
+            setGuideNotice(null)
             setActiveSeat(number)
           }}
         />
         <aside className="rounded-3xl border border-slate-200 bg-white p-5">
           <h3 className="font-semibold">{bus.name}</h3>
+          {bus.plate ? <p className="mt-1 font-mono text-sm font-semibold tracking-wide">{bus.plate}</p> : null}
           <p className="mt-1 text-sm text-slate-500">
             {occupied} dolu · {bus.seats.length - occupied} boş
           </p>
           <ul className="mt-5 space-y-3 text-sm">
             <Legend swatch="bg-emerald-500" label="Boş koltuk" />
             <Legend swatch="bg-rose-600" label="Dolu koltuk" />
+            <Legend swatch="bg-slate-400" label="Rehber koltukları" />
             <Legend swatch="bg-amber-400" label="Seçilen koltuk" />
           </ul>
         </aside>
@@ -148,6 +165,33 @@ function SeatSelection() {
             setAdminOpen(true)
           }}
         />
+      ) : null}
+
+      {guideNotice ? (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4"
+          onMouseDown={() => setGuideNotice(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="guide-title"
+            className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="guide-title" className="text-xl font-semibold">
+              Koltuk {guideNotice}
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">Bu koltuk rehber için ayrılmıştır.</p>
+            <button
+              type="button"
+              onClick={() => setGuideNotice(null)}
+              className="mt-5 rounded-full bg-teal-800 px-5 py-2.5 text-sm font-semibold text-white"
+            >
+              Tamam
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {occupiedNotice !== null ? (
@@ -180,7 +224,7 @@ function SeatSelection() {
       {activeSeat !== null ? (
         <PassengerModal
           key={`${bus.id}-${activeSeat}`}
-          busName={bus.name}
+          busName={bus.plate ? `${bus.name} · ${bus.plate}` : bus.name}
           seatNumber={activeSeat}
           onClose={() => setActiveSeat(null)}
           onSave={savePassenger}

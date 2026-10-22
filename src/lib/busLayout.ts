@@ -13,13 +13,29 @@ export type LayoutRow = {
   left: LayoutSlot[]
   right: LayoutSlot[]
   center?: LayoutSlot[]
+  full?: LayoutSlot[]
   separated?: boolean
 }
 
-export const FLEET: Array<{ id: string; number: BusNumber; name: string; capacity: BusCapacity }> = [
-  { id: 'otobus-1', number: 1, name: 'Otobüs 1', capacity: 46 },
-  { id: 'otobus-2', number: 2, name: 'Otobüs 2', capacity: 46 },
-  { id: 'otobus-3', number: 3, name: 'Otobüs 3', capacity: 55 },
+/** Sağ sütunun en ön sırası: koridor ve cam. Her otobüste rehber için kilitlidir. */
+export function isGuideSeat(number: number): boolean {
+  return number === 3 || number === 4
+}
+
+export function isTakenSeat(status: Seat['status']): boolean {
+  return status === 'occupied' || status === 'reserved'
+}
+
+export const FLEET: Array<{
+  id: string
+  number: BusNumber
+  name: string
+  plate?: string
+  capacity: BusCapacity
+}> = [
+  { id: 'otobus-1', number: 1, name: 'Otobüs 1', plate: '71 ACS 813', capacity: 55 },
+  { id: 'otobus-2', number: 2, name: 'Otobüs 2', plate: '71 AEU 983', capacity: 46 },
+  { id: 'otobus-3', number: 3, name: 'Otobüs 3', plate: '71 AEU 097', capacity: 46 },
 ]
 
 function pair(leftNumber: number, rightNumber: number): LayoutSlot[] {
@@ -30,7 +46,7 @@ function pair(leftNumber: number, rightNumber: number): LayoutSlot[] {
 }
 
 // Önden arkaya. Sol çiftler dıştan içe, sağ çiftler koridordan cama doğru.
-// 55 kişilik planda 46'lık düzen korunur; 47-55 arkaya eklenir.
+// 55 kişilik plan 46'lık gövdeyi aynen kullanır; arka sıra beş koltuktur.
 export function busLayout(capacity: BusCapacity): LayoutRow[] {
   const rows: LayoutRow[] = [
     {
@@ -69,8 +85,12 @@ export function busLayout(capacity: BusCapacity): LayoutRow[] {
   if (capacity === 55) {
     rows.push(
       { id: 'row-47', left: pair(47, 48), right: pair(49, 50) },
-      { id: 'row-51', left: pair(51, 52), right: pair(53, 54) },
-      { id: 'row-55', left: [], right: [], center: [{ kind: 'seat', number: 55 }] },
+      {
+        id: 'row-51',
+        left: [],
+        right: [],
+        full: [51, 52, 53, 54, 55].map((number) => ({ kind: 'seat' as const, number })),
+      },
     )
   }
 
@@ -81,7 +101,7 @@ export function busLayout(capacity: BusCapacity): LayoutRow[] {
 function collectSeatNumbers(rows: LayoutRow[]): number[] {
   const numbers: number[] = []
   for (const row of rows) {
-    for (const slot of [...row.left, ...row.right, ...(row.center ?? [])]) {
+    for (const slot of [...row.left, ...row.right, ...(row.center ?? []), ...(row.full ?? [])]) {
       if (slot.kind === 'seat') numbers.push(slot.number)
     }
   }
@@ -106,6 +126,6 @@ export function createSeats(capacity: BusCapacity): Seat[] {
     .sort((left, right) => left - right)
     .map((number) => ({
       number,
-      status: 'available',
+      status: isGuideSeat(number) ? 'reserved' : 'available',
     }))
 }

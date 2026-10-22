@@ -62,7 +62,8 @@ export function PrintSchemasPage() {
             <header className="mb-[4mm] border-b border-slate-300 pb-[3mm]">
               <p className="text-[11pt] font-semibold">{APP_TITLE}</p>
               <h2 className="mt-[1mm] text-[16pt] font-bold">
-                {bus.name} · {bus.capacity} kişilik
+                {bus.name}
+                {bus.plate ? ` · ${bus.plate}` : ''} · {bus.capacity} kişilik
               </h2>
               <p className="mt-[1mm] text-[10pt]">
                 Kalkış {formatDateTime(trip.departureAt)} · {trip.meetingPoint} · İniş {formatTime(trip.returnAt)}, aynı

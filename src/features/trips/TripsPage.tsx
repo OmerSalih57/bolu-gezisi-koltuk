@@ -5,6 +5,7 @@ import { TripSchedule } from '@/components/trip/TripSchedule.tsx'
 import { PageHeading } from '@/components/ui/PageHeading.tsx'
 import { useTrip } from '@/hooks/useTrip.ts'
 import { APP_TITLE } from '@/lib/brand.ts'
+import { isTakenSeat } from '@/lib/busLayout.ts'
 
 export function TripsPage() {
   return (
@@ -17,7 +18,7 @@ export function TripsPage() {
 function TripList() {
   const { trip } = useTrip()
   const occupied = trip.buses.reduce(
-    (sum, bus) => sum + bus.seats.filter((seat) => seat.status === 'occupied').length,
+    (sum, bus) => sum + bus.seats.filter((seat) => isTakenSeat(seat.status)).length,
     0,
   )
   const total = trip.buses.reduce((sum, bus) => sum + bus.seats.length, 0)
@@ -36,6 +37,14 @@ function TripList() {
                 <p className="text-sm text-teal-800">{trip.community}</p>
                 <h2 className="mt-1 text-xl font-semibold">{trip.title}</h2>
                 <TripSchedule trip={trip} />
+                <ul className="mt-3 space-y-1 text-sm text-slate-600">
+                  {trip.buses.map((bus) => (
+                    <li key={bus.id}>
+                      {bus.name}
+                      {bus.plate ? ` · ${bus.plate}` : ''} · {bus.capacity} kişilik
+                    </li>
+                  ))}
+                </ul>
               </div>
               <p className="text-sm text-slate-500">
                 {occupied}/{total} koltuk dolu

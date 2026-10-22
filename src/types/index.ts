@@ -1,4 +1,4 @@
-export type SeatStatus = 'available' | 'occupied'
+export type SeatStatus = 'available' | 'occupied' | 'reserved'
 
 export type Seat = {
   number: number
@@ -13,6 +13,7 @@ export type Bus = {
   id: string
   number: BusNumber
   name: string
+  plate?: string
   capacity: BusCapacity
   seats: Seat[]
 }

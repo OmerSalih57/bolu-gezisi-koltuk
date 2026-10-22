@@ -303,15 +303,57 @@ create trigger seats_sync_status
   for each row
   execute function public.sync_seat_status();
 
+-- Eski kurulumda 55 kişilik otobüs 3 numaradaydı. Bir kez 1 numaraya alınır.
+-- 1 → 2, 2 → 3, 3 → 1. Koltuklardaki yolcular plakayla birlikte taşınır.
+do $$
+declare
+  v_name text;
+begin
+  if exists (select 1 from public.seats where bus_number = 3 and seat_number = 55)
+     and not exists (select 1 from public.seats where bus_number = 1 and seat_number = 55)
+  then
+    select con.conname
+    into v_name
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace nsp on nsp.oid = rel.relnamespace
+    where nsp.nspname = 'public'
+      and rel.relname = 'seats'
+      and con.contype = 'c'
+      and pg_get_constraintdef(con.oid) ilike '%bus_number%';
+
+    if v_name is not null then
+      execute format('alter table public.seats drop constraint %I', v_name);
+    end if;
+
+    alter table public.seats disable trigger seats_sync_status;
+
+    update public.seats
+    set bus_number = case bus_number when 1 then 10 when 2 then 20 when 3 then 30 end;
+
+    update public.seats
+    set bus_number = case bus_number when 30 then 1 when 10 then 2 when 20 then 3 end;
+
+    delete from public.seat_status;
+    insert into public.seat_status (bus_number, seat_number, is_booked)
+    select bus_number, seat_number, is_booked
+    from public.seats;
+
+    alter table public.seats enable trigger seats_sync_status;
+    alter table public.seats
+      add constraint seats_bus_number_check check (bus_number in (1, 2, 3));
+  end if;
+end $$;
+
 insert into public.seats (bus_number, seat_number)
-select bus.bus_number, seat.seat_number
-from (values (1), (2)) as bus (bus_number)
-cross join generate_series(1, 46) as seat (seat_number)
+select 1, seat.seat_number
+from generate_series(1, 55) as seat (seat_number)
 on conflict (bus_number, seat_number) do nothing;
 
 insert into public.seats (bus_number, seat_number)
-select 3, seat.seat_number
-from generate_series(1, 55) as seat (seat_number)
+select bus.bus_number, seat.seat_number
+from (values (2), (3)) as bus (bus_number)
+cross join generate_series(1, 46) as seat (seat_number)
 on conflict (bus_number, seat_number) do nothing;
 
 insert into public.seat_status (bus_number, seat_number, is_booked)
@@ -343,6 +385,10 @@ declare
 begin
   if v_ip is not null and not public.register_attempt('book-ip:' || v_ip, 8, 60) then
     return jsonb_build_object('ok', false, 'error', 'Çok fazla deneme yapıldı. Biraz sonra yeniden deneyin.');
+  end if;
+
+  if p_bus_number in (1, 2, 3) and p_seat_number in (3, 4) then
+    return jsonb_build_object('ok', false, 'error', 'Bu koltuk rehber için ayrılmıştır.');
   end if;
 
   if not public.is_valid_name(v_name) then

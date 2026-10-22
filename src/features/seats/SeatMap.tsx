@@ -18,7 +18,13 @@ export function SeatMap({ bus, activeSeat, onSelect }: SeatMapProps) {
     <div className="mx-auto w-fit">
       <div className="rounded-[2rem] bg-gradient-to-b from-slate-700 to-slate-900 p-3 shadow-xl">
         <div className="rounded-[1.5rem] bg-[#eef2f6] px-4 py-4">
-          <div className="mb-3 h-8 rounded-t-2xl rounded-b-md bg-slate-300/90" />
+          <div className="mb-3 flex h-8 items-center justify-center rounded-t-2xl rounded-b-md bg-slate-300/90">
+            {bus.plate ? (
+              <span className="rounded border-2 border-slate-900 bg-white px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-slate-950">
+                {bus.plate}
+              </span>
+            ) : null}
+          </div>
           <p className="mb-3 text-center text-[11px] font-bold tracking-[0.28em] text-slate-500">
             ÖN
           </p>
@@ -29,7 +35,22 @@ export function SeatMap({ bus, activeSeat, onSelect }: SeatMapProps) {
           </div>
           <div className="flex flex-col gap-1.5" aria-label={`${bus.name} koltuk planı`}>
             {rows.map((row) =>
-              row.center ? (
+              row.full ? (
+                <div key={row.id} className="grid w-[17.75rem] grid-cols-5 gap-1 pt-1">
+                  {row.full.map((slot) =>
+                    slot.kind === 'seat' ? (
+                      <SeatSlot
+                        key={slot.number}
+                        slot={slot}
+                        seats={seats}
+                        activeSeat={activeSeat}
+                        onSelect={onSelect}
+                        fill
+                      />
+                    ) : null,
+                  )}
+                </div>
+              ) : row.center ? (
                 <div key={row.id} className="flex justify-center pt-1">
                   {row.center.map((slot) =>
                     slot.kind === 'seat' ? (
@@ -70,11 +91,6 @@ export function SeatMap({ bus, activeSeat, onSelect }: SeatMapProps) {
           </p>
         </div>
       </div>
-      {bus.capacity === 55 ? (
-        <p className="mt-3 text-center text-xs text-slate-500">
-          47–55 numaralı koltuklar, 46 kişilik düzenin arka uzatmasıdır.
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -122,11 +138,13 @@ function SeatSlot({
   seats,
   activeSeat,
   onSelect,
+  fill = false,
 }: {
   slot: Extract<LayoutSlot, { kind: 'seat' }>
   seats: Map<number, Bus['seats'][number]>
   activeSeat: number | null
   onSelect: (number: number) => void
+  fill?: boolean
 }) {
   const seat = seats.get(slot.number)
   return (
@@ -135,6 +153,7 @@ function SeatSlot({
       status={seat?.status ?? 'available'}
       selected={activeSeat === slot.number}
       onSelect={onSelect}
+      fill={fill}
     />
   )
 }

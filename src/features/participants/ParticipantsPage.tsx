@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { RequireDatabase } from '@/components/setup/RequireDatabase.tsx'
 import { useTrip } from '@/hooks/useTrip.ts'
+import { isTakenSeat } from '@/lib/busLayout.ts'
 import { TRIP_ID } from '@/lib/trip.ts'
 
 export function ParticipantsPage() {
@@ -17,7 +18,7 @@ function ParticipantCounts() {
   if (tripId !== TRIP_ID) return <p className="text-slate-600">Gezi bulunamadı.</p>
 
   const occupied = trip.buses.reduce(
-    (sum, bus) => sum + bus.seats.filter((seat) => seat.status === 'occupied').length,
+    (sum, bus) => sum + bus.seats.filter((seat) => isTakenSeat(seat.status)).length,
     0,
   )
 
@@ -27,10 +28,13 @@ function ParticipantCounts() {
       <p className="mt-2 text-slate-600">Bu geziye {occupied} koltuk dolu.</p>
       <ul className="mt-4 divide-y divide-slate-100">
         {trip.buses.map((bus) => {
-          const filled = bus.seats.filter((seat) => seat.status === 'occupied').length
+          const filled = bus.seats.filter((seat) => isTakenSeat(seat.status)).length
           return (
             <li key={bus.id} className="flex items-center justify-between py-3 text-sm">
-              <span className="font-medium">{bus.name}</span>
+              <span className="font-medium">
+                {bus.name}
+                {bus.plate ? <span className="ml-2 font-mono text-xs tracking-wide text-slate-700">{bus.plate}</span> : null}
+              </span>
               <span className="text-slate-600">
                 {filled} dolu · {bus.seats.length - filled} boş
               </span>

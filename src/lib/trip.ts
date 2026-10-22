@@ -1,4 +1,4 @@
-import { createSeats, FLEET } from '@/lib/busLayout.ts'
+import { createSeats, FLEET, isGuideSeat } from '@/lib/busLayout.ts'
 import { APP_TITLE } from '@/lib/brand.ts'
 import type { PublicSeat, Trip } from '@/types/index.ts'
 
@@ -26,10 +26,16 @@ export function tripFromSeats(rows: PublicSeat[]): Trip {
       id: bus.id,
       number: bus.number,
       name: bus.name,
+      plate: bus.plate,
       capacity: bus.capacity,
       seats: createSeats(bus.capacity).map((seat) => ({
         number: seat.number,
-        status: booked.has(`${bus.number}:${seat.number}`) ? 'occupied' : 'available',
+        status:
+          isGuideSeat(seat.number)
+            ? 'reserved'
+            : booked.has(`${bus.number}:${seat.number}`)
+              ? 'occupied'
+              : 'available',
       })),
     })),
   }

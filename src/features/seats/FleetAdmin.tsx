@@ -164,7 +164,10 @@ export function FleetAdmin() {
                   <tr key={`${person.busNumber}-${person.seatNumber}`} className="border-b border-slate-100">
                     <td className="py-3 pr-3">
                       {bus?.name ?? `Otobüs ${person.busNumber}`}
-                      <span className="mt-0.5 block text-xs text-slate-400">{bus?.capacity} kişilik</span>
+                      <span className="mt-0.5 block text-xs text-slate-400">
+                        {bus?.plate ? `${bus.plate} · ` : ''}
+                        {bus?.capacity} kişilik
+                      </span>
                     </td>
                     <td className="py-3 pr-3 font-semibold">{person.seatNumber}</td>
                     <td className="py-3 pr-3">{person.fullName}</td>
