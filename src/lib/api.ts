@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase.ts'
-import type { Booking, BusNumber, PassengerInput, PublicSeat, RosterEntry, RosterPerson } from '@/types/index.ts'
+import type { AuditLog, Booking, BusNumber, PassengerInput, PublicSeat, RosterEntry, RosterPerson } from '@/types/index.ts'
 
 type OkResult = { ok: true }
 type FailResult = { ok: false; error: string }
@@ -171,4 +171,36 @@ export async function fetchRoster(
     isRegistered: Boolean(row.is_registered),
   }))
   return { ok: true, roster }
+}
+
+export async function fetchAuditLogs(
+  password: string,
+): Promise<{ ok: true; logs: AuditLog[] } | FailResult> {
+  const { data, error } = await client().rpc('list_audit_logs', { p_password: password })
+  if (error) {
+    if (/PGRST202|schema cache|could not find the function/i.test(error.message)) {
+      return {
+        ok: false,
+        error: 'Denetim kaydı için supabase/schema.sql dosyasını SQL Editor’da yeniden çalıştırın.',
+      }
+    }
+    return { ok: false, error: 'Şifre hatalı.' }
+  }
+
+  const logs: AuditLog[] = []
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const busNumber = Number(row.bus_number)
+    const seatNumber = Number(row.seat_number)
+    if (!isBusNumber(busNumber) || !Number.isInteger(seatNumber)) continue
+    logs.push({
+      id: String(row.id ?? `${busNumber}-${seatNumber}-${row.created_at}`),
+      createdAt: String(row.created_at ?? ''),
+      busNumber,
+      seatNumber,
+      ipAddress: String(row.ip_address ?? ''),
+      deviceInfo: String(row.device_info ?? ''),
+      userAgent: String(row.user_agent ?? ''),
+    })
+  }
+  return { ok: true, logs }
 }

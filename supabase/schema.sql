@@ -9,6 +9,10 @@
 --    insert into public.admin_secret (id, password)
 --    values (1, extensions.crypt('yeni-sifre', extensions.gen_salt('bf')))
 --    on conflict (id) do update set password = excluded.password;
+-- 3. Denetim sayfasının şifresi yönetim şifresinden ayrıdır. Örnek değeri kullanmayın:
+--    insert into public.audit_secret (id, password)
+--    values (1, extensions.crypt('denetim-sifresi', extensions.gen_salt('bf')))
+--    on conflict (id) do update set password = excluded.password;
 --
 -- Güvenlik:
 -- Anon anahtar tarayıcıda durur; bu normaldir. participants ve seats tablolarında
@@ -56,17 +60,40 @@ create table if not exists public.admin_secret (
   constraint admin_secret_singleton check (id = 1)
 );
 
+create table if not exists public.audit_secret (
+  id integer primary key,
+  password text not null,
+  constraint audit_secret_singleton check (id = 1)
+);
+
+create table if not exists public.booking_audits (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  bus_number integer not null,
+  seat_number integer not null,
+  ip_address text,
+  device_info text,
+  user_agent text
+);
+
+create index if not exists booking_audits_created_at_idx
+  on public.booking_audits (created_at desc);
+
 alter table public.participants enable row level security;
 alter table public.seats enable row level security;
 alter table public.seat_status enable row level security;
 alter table public.admin_users enable row level security;
 alter table public.admin_secret enable row level security;
+alter table public.audit_secret enable row level security;
+alter table public.booking_audits enable row level security;
 
 revoke all on table public.participants from anon, authenticated;
 revoke all on table public.seats from anon, authenticated;
 revoke all on table public.seat_status from anon, authenticated;
 revoke all on table public.admin_users from anon, authenticated;
 revoke all on table public.admin_secret from anon, authenticated;
+revoke all on table public.audit_secret from anon, authenticated;
+revoke all on table public.booking_audits from anon, authenticated;
 
 create table if not exists public.request_limits (
   bucket text not null,
@@ -133,6 +160,62 @@ begin
 
   return left(forwarded, 64);
 end;
+$$;
+
+create or replace function public.request_user_agent()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  headers json;
+begin
+  begin
+    headers := current_setting('request.headers', true)::json;
+  exception
+    when others then
+      return null;
+  end;
+
+  if headers is null then
+    return null;
+  end if;
+
+  return left(nullif(trim(headers->>'user-agent'), ''), 512);
+end;
+$$;
+
+create or replace function public.describe_device(p_ua text)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select left(trim(both ' · ' from concat_ws(' · ',
+    case
+      when coalesce(p_ua, '') = '' then 'Bilinmiyor'
+      when p_ua ilike '%ipad%' or p_ua ilike '%tablet%' then 'Tablet'
+      when p_ua ilike '%mobile%' or p_ua ilike '%iphone%' or p_ua ilike '%android%' then 'Telefon'
+      else 'Bilgisayar'
+    end,
+    case
+      when p_ua ilike '%edg/%' then 'Edge'
+      when p_ua ilike '%chrome/%' and p_ua not ilike '%edg/%' then 'Chrome'
+      when p_ua ilike '%firefox/%' then 'Firefox'
+      when p_ua ilike '%safari/%' and p_ua not ilike '%chrome/%' then 'Safari'
+      else null
+    end,
+    case
+      when p_ua ilike '%windows%' then 'Windows'
+      when p_ua ilike '%android%' then 'Android'
+      when p_ua ilike '%iphone%' or p_ua ilike '%ipad%' then 'iOS'
+      when p_ua ilike '%mac os%' then 'macOS'
+      when p_ua ilike '%linux%' then 'Linux'
+      else null
+    end
+  )), 120);
 $$;
 
 create or replace function public.register_attempt(
@@ -219,6 +302,56 @@ begin
     end if;
   elsif v_stored = p_password then
     update public.admin_secret
+    set password = extensions.crypt(p_password, extensions.gen_salt('bf'))
+    where id = 1;
+    return true;
+  end if;
+
+  perform public.register_attempt(v_bucket, 8, 900);
+  return false;
+end;
+$$;
+
+create or replace function public.is_audit(p_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_stored text;
+  v_bucket text := 'audit-fail:' || coalesce(public.request_ip(), 'unknown');
+  v_failures integer;
+begin
+  if coalesce(p_password, '') = '' or length(p_password) > 128 then
+    return false;
+  end if;
+
+  select count(*)
+  into v_failures
+  from public.request_limits
+  where bucket = v_bucket
+    and created_at > now() - interval '15 minutes';
+
+  if v_failures >= 8 then
+    return false;
+  end if;
+
+  select password
+  into v_stored
+  from public.audit_secret
+  where id = 1;
+
+  if v_stored is null then
+    return false;
+  end if;
+
+  if v_stored like '$2%' then
+    if v_stored = extensions.crypt(p_password, v_stored) then
+      return true;
+    end if;
+  elsif v_stored = p_password then
+    update public.audit_secret
     set password = extensions.crypt(p_password, extensions.gen_salt('bf'))
     where id = 1;
     return true;
@@ -382,6 +515,8 @@ declare
   v_phone_on_file text;
   v_booked boolean;
   v_ip text := public.request_ip();
+  v_ua text := public.request_user_agent();
+  v_device text := coalesce(public.describe_device(v_ua), 'Bilinmiyor');
 begin
   if v_ip is not null and not public.register_attempt('book-ip:' || v_ip, 8, 60) then
     return jsonb_build_object('ok', false, 'error', 'Çok fazla deneme yapıldı. Biraz sonra yeniden deneyin.');
@@ -455,6 +590,9 @@ begin
       participant_tc = v_tc
   where bus_number = p_bus_number
     and seat_number = p_seat_number;
+
+  insert into public.booking_audits (bus_number, seat_number, ip_address, user_agent, device_info)
+  values (p_bus_number, p_seat_number, v_ip, v_ua, v_device);
 
   return jsonb_build_object('ok', true);
 end;
@@ -629,8 +767,45 @@ begin
 end;
 $$;
 
+create or replace function public.list_audit_logs(p_password text)
+returns table (
+  id uuid,
+  created_at timestamptz,
+  bus_number integer,
+  seat_number integer,
+  ip_address text,
+  device_info text,
+  user_agent text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_audit(p_password) then
+    raise exception 'yetkisiz' using errcode = '42501';
+  end if;
+
+  return query
+  select
+    log.id,
+    log.created_at,
+    log.bus_number,
+    log.seat_number,
+    log.ip_address,
+    log.device_info,
+    log.user_agent
+  from public.booking_audits as log
+  order by log.created_at desc
+  limit 500;
+end;
+$$;
+
 revoke all on function public.is_admin(text) from public, anon, authenticated;
+revoke all on function public.is_audit(text) from public, anon, authenticated;
 revoke all on function public.request_ip() from public, anon, authenticated;
+revoke all on function public.request_user_agent() from public, anon, authenticated;
+revoke all on function public.describe_device(text) from public, anon, authenticated;
 revoke all on function public.register_attempt(text, integer, integer) from public, anon, authenticated;
 revoke all on function public.is_valid_name(text) from public, anon, authenticated;
 revoke all on function public.is_valid_tc(text) from public, anon, authenticated;
@@ -642,6 +817,7 @@ revoke all on function public.close_roster(text) from public, anon, authenticate
 revoke all on function public.release_seat(text, integer, integer) from public, anon, authenticated;
 revoke all on function public.list_bookings(text) from public, anon, authenticated;
 revoke all on function public.list_roster(text) from public, anon, authenticated;
+revoke all on function public.list_audit_logs(text) from public, anon, authenticated;
 
 grant execute on function public.is_admin(text) to anon, authenticated;
 grant execute on function public.book_seat(text, text, text, integer, integer) to anon, authenticated;
@@ -650,6 +826,7 @@ grant execute on function public.close_roster(text) to anon, authenticated;
 grant execute on function public.release_seat(text, integer, integer) to anon, authenticated;
 grant execute on function public.list_bookings(text) to anon, authenticated;
 grant execute on function public.list_roster(text) to anon, authenticated;
+grant execute on function public.list_audit_logs(text) to anon, authenticated;
 
 do $$
 begin

@@ -59,3 +59,13 @@ export type PassengerInput = {
   nationalId: string
   phone: string
 }
+
+export type AuditLog = {
+  id: string
+  createdAt: string
+  busNumber: BusNumber
+  seatNumber: number
+  ipAddress: string
+  deviceInfo: string
+  userAgent: string
+}
